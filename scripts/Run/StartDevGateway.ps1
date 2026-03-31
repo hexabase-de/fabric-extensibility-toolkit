@@ -31,8 +31,18 @@ Write-Host "DevGateway used: $fileExe"
 Write-Host "Configuration xsfile used: $CONFIGURATIONFILE"
 
 $token = ""
+
+Write-Host "Interactive Login (requested): $InteractiveLogin" -ForegroundColor Green
+
+# Set InteractiveLogin to false automatically for Codespaces or non-Windows platforms
+if ($env:CODESPACES -eq "true" -or -not $IsWindows) {
+    Write-Host "Running in Codespaces or non-Windows platform detected. Setting InteractiveLogin to false." -ForegroundColor Yellow
+    $InteractiveLogin = $false
+    Write-Host "Interactive Login (required by platform): $InteractiveLogin" -ForegroundColor Green
+}
+
 # When InteractiveLogin is false, always use az commands for authentication
-if (-not $InteractiveLogin -or $env:CODESPACES -eq "true" -or $IsMacOS) {
+if (-not $InteractiveLogin) {
     Write-Host "Using non-interactive authentication via az CLI..." -ForegroundColor Green
     
     # Check if already logged in
@@ -40,18 +50,18 @@ if (-not $InteractiveLogin -or $env:CODESPACES -eq "true" -or $IsMacOS) {
     if (-not $account) {
         Write-Host "Not logged in. You need to perform az login..." -ForegroundColor Red
         az config set core.login_experience_v2=off | Out-Null
-        $fabricTentanID = Read-Host "Enter your Fabric tenant id"
-        az login -t $fabricTentanID --allow-no-subscriptions --use-device-code | Out-Null
+        $fabricTenantID = Read-Host "Enter your Fabric tenant id"
+        az login -t $fabricTenantID --allow-no-subscriptions --use-device-code | Out-Null
     }
 
     $token = az account get-access-token --scope https://analysis.windows.net/powerbi/api/.default --query accessToken -o tsv 
     Write-Host "Successfully obtained access token via az CLI" -ForegroundColor Green
 }
+
 $config = Get-Content -Path $CONFIGURATIONFILE -Raw | ConvertFrom-Json 
 $manifestPackageFilePath = $config.ManifestPackageFilePath 
 $devWorkspaceId = $config.WorkspaceGuid 
 $logLevel = "Information"
-
 
 if($IsWindows) { 
     if ($InteractiveLogin -and [string]::IsNullOrEmpty($token)) {
@@ -78,6 +88,8 @@ if($IsWindows) {
             exit 1
         }
     } else {
-        & dotnet $fileExe -LogLevel $logLevel -DevMode:UserAuthorizationToken $token -DevMode:ManifestPackageFilePath $manifestPackageFilePath -DevMode:WorkspaceGuid $devWorkspaceId
+            # Use token-based authentication
+            Write-Host "Starting DevGateway with token-based authentication..." -ForegroundColor Green
+            & dotnet $fileExe -LogLevel $logLevel -DevMode:UserAuthorizationToken $token -DevMode:ManifestPackageFilePath $manifestPackageFilePath -DevMode:WorkspaceGuid $devWorkspaceId                        
     }
 }
